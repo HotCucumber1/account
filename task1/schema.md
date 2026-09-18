@@ -4,160 +4,434 @@
 flowchart TB
     subgraph Core
         direction TB
-        C[User]
-        G[Access]
-        H[Notification]
-        S[Storage]
-        K[Audit]
+        A[Account]
+        B[bff]
+        R[Realtime]
+        U[Auth]
+        S[Session]
+        Z[Access]
+        N[Notification]
+        D[Audit]
+        T[Storage]
     end
 
     subgraph Prod
         direction TB
-        D[Product 1]
-        E[Product 2]
-        F[Product 3]
+        P[Product]
     end
-    A[Frontend] -->|get, create, update| B[API Gateway]
-    Z[Public API] -->|get, create, update| B[API Gateway]
-    B --> C[User]
-    B --> D[Product 1]
-    B --> E[Product 2]
-    B --> F[Product 3]
-    C --> H[Notification]
-    D --> G[Access]
-    E --> G[Access]
-    F --> G[Access]
-    D --> C[User]
-    E --> C[User]
-    F --> C[User]
-    D --> H[Notification]
-    E --> H[Notification]
-    F --> H[Notification]
-    D --> S[Storage]
-    E --> S[Storage]
-    F --> S[Storage]
-    G --> K[Audit]
-    H --> K[Audit]
-    S --> K[Audit]
-    C --> K[Audit]
-    D --> K[Audit]
-    E --> K[Audit]
-    F --> K[Audit]
+
+    F[Frontend] -->|get, create, update| G[API Gateway]
+    L[Public API] -->|get, create, update| G[API Gateway]
+    R --> S
+    B --> P
+    R --> Z
+    Z --> S
+    G --> B
+    G --> U
+    G --> Z
+    G --> R
+    G --> D
+    G --> P
+    G --> S
+    N --> A
+    P --> A
+    P --> N
+    P --> T
+    U --> S
+    R --> P
+    N --> T
+    A --> T
 ```
 
 ## Компоненты
 
-1. **User**:
-    * Цель:
-        * Управление жизненным циклом пользователя (регистрация, профиль)
-        * Проверка учетных данных (логин/пароль)
-        * Выпуск и валидация токенов сессии.
-    * НЕ Цель:
-        * Что юзер юзает
-        * Какие у него права
-    * Что хранит:
-        * Учетные записи (ID, пароль, email, телефон и тд)
-        * Активные сессии
-2. **Access**:
-    * Цель:
-        * Хранение ролей и доступов на действия/ресурсы
-    * НЕ Цель:
-        * Не знает, на что конкрнкретно и какие это права
-    * Что хранит:
-        * Права доступа (Кто, На что, Роли, Доступы)
-3. **Storage**:
-    * Цель:
-        * Хранение и отдача файлов
-    * НЕ Цель:
-        * Не знает, для чего эти файлы
-    * Что хранит:
-        * Файлы, метаданные
-4. **Notification**:
-    * Цель:
-        * Создать сообщение
-        * Отправить сообщение
-    * НЕ Цель:
-        * Не знает смысла уведомления (зачем оно отправляется)
-        * Не принимает решения, нужно ли отправлять
-    * Что хранит:
-        * Шаблоны писем
-        * Статусы уведомлений (доставлено, ошибка, ин прогресс)
+[//]: # (Поля пользователя не лежат в самом юзере)
+
+[//]: # (Юзер распределен:)
+
+[//]: # ()
+[//]: # (user &#40;identity, очень тонка модель юзера&#41;)
+
+[//]: # (auth &#40;<- пароль тоже тут, как мы будем аутентифицироваться&#41;)
+
+[//]: # (authz &#40;авторизация, можешь ли ты иметь доступ и админ ли ты&#41;, наш access)
+
+[//]: # (session &#40;токены, текущая сессия&#41;)
+
+---
+
+## 1. Account
+
+* **Цель:**
+    * Управление жизненным циклом пользователя (регистрация, профиль, удаление)
+    * Хранение и обновление персональных данных (email, телефон, имя, аватар)
+    * Предоставление базовых данных о пользователе другим сервисам (по запросу)
+* **НЕ Цель:**
+    * Аутентификация (проверка пароля, выпуск токенов) — Auth
+    * Управление сессиями — Session
+    * Права и роли — Access
+    * Знание, что пользователь делает в продукте
+* **Что хранит:**
+    * Учётные записи (ID, email, телефон, имя, статус)
+    * Профиль пользователя (аватар-ссылка, настройки)
+    * Историю изменений профиля
+    * **НЕ хранит:** пароли, токены, сессии, роли
+
+---
+
+## 2. Auth
+
+* **Цель:**
+    * Проверка учётных данных (логин/пароль, OAuth)
+    * Выпуск токенов (access/refresh)
+    * Валидация токенов для других сервисов
+* **НЕ Цель:**
+    * Хранение профиля пользователя — это Account
+    * Управление сессиями (TTL, отзыв, привязка к устройству) — это Session
+    * Права и роли — это Access
+* **Что хранит:**
+    * Хэши паролей
+    * Секреты (если такое будет)
+    * Связь с внешними IDP (если есть OAuth)
+    * **НЕ хранит:** профиль, сессии, роли
+
+---
+
+## 3. Session
+
+* **Цель:**
+    * Управление жизненным циклом сессии (создание, продление, отзыв)
+    * Хранение контекста сессии (user_id, device, IP, TTL)
+    * Предоставление быстрой валидации «сессия жива?»
+    * Отзыв всех сессий пользователя (logout everywhere)
+* **НЕ Цель:**
+    * Проверка пароля — это Auth
+    * Хранение профиля — это Account
+    * Хранение ролей/прав — это Access
+    * Бизнес-логика
+* **Что хранит:**
+    * Сессии (session_id, user_id, device_id, created_at, expires_at, status)
+    * Метаданные устройства (user-agent)
+    * Refresh-токены (или ссылки на них)
+    * **НЕ хранит:** пароли, профиль, роли, бизнес-данные
+
+---
+
+## 4. Access
+
+* **Цель:**
+    * Хранение ролей и прав доступа к продукту/системе
+    * Выдача решения «может ли субъект выполнить действие над ресурсом»
+    * Управление ролями (создание, назначение, отзыв)
+* **НЕ Цель:**
+    * Аутентификация — это Auth
+    * Управление сессиями — это Session
+    * Знание о правах **внутри** конкретного продукта — это Product
+    * Хранение бизнес-данных
+* **Что хранит:**
+    * Роли (role_id, name, description)
+    * Права/разрешения (permission_id, resource, action)
+    * Связи роль↔право
+    * Назначения субъект↔роль (user_id → role_id)
+    * **НЕ хранит:** профиль, сессии, пароли, бизнес-данные
+
+---
+
+## 5. Realtime (stateful сервис)
+
+[//]: # (TODO статус "онлайн/не онлайн" тут же хранить или как-то вычисляется?)
+
+* **Цель:**
+    * Держать WebSocket-соединения с клиентами
+    * Доставлять события от Product клиентам в реальном времени
+    * Принимать события от клиентов и передавать их в Product
+* **НЕ Цель:**
+    * Хранить историю сообщений/событий — это Product
+    * Аутентификация с нуля — валидирует токен через Session
+    * Бизнес-логика продукта
+    * Отправка push/email — это в Notification
+* **Что хранит:**
+    * Активные соединения (`user_id → socket`, только в памяти)
+    * **НЕ хранит:** сообщения, историю, профиль, файлы, роли
+
+---
+
+## 7. BFF (Backend-for-Frontend)
+
+* **Цель:**
+    * Агрегация данных из нескольких сервисов в один ответ под клиент
+    * Специфичная для клиента логика (порядок, фильтрация и т.д.)
+* **НЕ Цель:**
+    * Бизнес-логика продукта — это Product
+    * Аутентификация — это в Auth/Session через Gateway
+    * Хранение данных
+    * Собственные бизнес-правила
+* **Что хранит:**
+    * М.б. кэш, но тут пока ХЗ
+    * **НЕ хранит:** бизнес-данные, сессии, профиль, роли
+
+---
+
+## 8. Notification
+
+* **Цель:**
+    * Принять запрос на отправку уведомления
+    * Выбрать канал доставки (email, push)
+    * Отрендерить шаблон с переданными данными
+    * Отправить и зафиксировать статус
+* **НЕ Цель:**
+    * Принимать решение, **нужно ли** отправлять (это решает инициатор)
+    * Знать смысл уведомления (бизнес-контекст)
+    * Хранить бизнес-данные
+* **Что хранит:**
+    * Шаблоны уведомлений
+    * Статусы отправок (queued, sent, delivered, failed)
+    * Настройки способа? отправки
+    * **НЕ хранит:** бизнес-данные, профиль, решения о необходимости отправки
+
+---
+
+## 9. Audit
+
+* **Цель:**
+    * Принимать события аудита от всех сервисов
+    * Хранить их в неизменяемом виде
+    * Предоставлять доступ к логам
+* **НЕ Цель:**
+    * Принимать решения
+    * Влиять на бизнес-логику
+* **Что хранит:**
+    * События аудита (who, what, when, where, result)
+    * Лог
+    * Индексы для поиска
+    * **НЕ хранит:** бизнес-данные, сессии, профиль, роли
+
+---
+
+## 10. Storage
+
+* **Цель:**
+    * Хранить и отдавать файлы по запросу
+* **НЕ Цель:**
+    * Знать, для чего файл (аватар, вложение, документ)
+    * Знать, кому принадлежит файл (это знает вызывающий)
+    * Бизнес-логика
+* **Что хранит:**
+    * Файлы (бинарные данные)
+    * Ссылки на физическое хранилище (S3-ключи)
+    * **НЕ хранит:** бизнес-контекст, владельца, права
 
 ## Карта владения
 
-| Сущность / Данные        | Владелец | Кто использует (Читает/Модифицирует через API)       |
-|--------------------------|----------|------------------------------------------------------|
-| User (ID, логин, Пароль) | User     | Frontend, Продукты (только чтение)                   |
-| Session (JWT Токены)     | User     | API Gateway (для пропуска запросов)                  |
-| Permissions и Roles      | Access   | Продукты (для проверки допусков)                     |
-| Resource permissions     | Access   | Продукты (передают в Access инфу, кто создал ресурс) |
-| Product Data             | Product  | Frontend (через API конкретного продукта)            |
-| Files                    | Storage  | Продукты, Frontend                                   |
-| Audit Logs               | Audit    | Админы или *анал*итики (Security Team)               |
+| Сущность / Данные                  | Владелец                  | Кто использует (Читает / Модифицирует через API)                            |
+|------------------------------------|---------------------------|-----------------------------------------------------------------------------|
+| Профиль (ID, email, телефон, имя)  | **Account**               | Frontend, BFF, Product (только публичная часть); модифицирует — Account     |
+| Хэш пароля, MFA-секреты            | **Auth**                  | Только Auth (внутренне)                                                     |
+| Ключи подписи JWT                  | **Auth**                  | Auth (подпись), Gateway (валидация через JWKS)                              |
+| Сессии (`session_id`, device, TTL) | **Session**               | Gateway, BFF, Realtime, Access — только чтение; модифицирует — Session      |
+| Refresh-токены                     | **Session**               | Session, Auth (при refresh)                                                 |
+| Роли                               | **Access**                | Product, BFF, Realtime — только чтение; модифицирует — Access               |
+| Права/разрешения                   | **Access**                | Product, BFF, Realtime — только чтение; модифицирует — Access               |
+| Назначения ролей (user ↔ role)     | **Access**                | Product, BFF, Realtime — только чтение; модифицирует — Access               |
+| Доменные данные продукта           | **Product**               | Frontend (через BFF) — чтение; модифицирует — Product                       |
+| Тонкие права на ресурсы            | **Product**               | Product (внутренне)                                                         |
+| История сообщений / событий        | **Product**               | Frontend (через BFF), Realtime — чтение; модифицирует — Product             |
+| Файлы (бинарные данные)            | **Storage**               | Product, BFF, Frontend (по ссылкам) — чтение; модифицирует — Storage        |
+| Привязка «файл ↔ сущность»         | **Product** (или Account) | Product, BFF — чтение; модифицирует — владелец сущности                     |
+| Шаблоны уведомлений                | **Notification**          | Только Notification (внутренне)                                             |
+| Статусы уведомлений                | **Notification**          | Notification, Audit (через события) — чтение; модифицирует — Notification   |
+| События аудита                     | **Audit**                 | Security, аудиторы, админы — чтение; модифицирует — **никто** (append-only) |
+| WS-соединения                      | **Realtime**              | Только Realtime (внутренне)                                                 |
+
 
 ## Зависимости
 
+
+## 1. API Gateway
+
 ```mermaid
 flowchart TB
-    A[API Gateway]
-    U[User]
+    G[API Gateway]
+    A[Account]
+    U[Auth]
+    S[Session]
+    Z[Access]
+    B[BFF]
+    R[Realtime]
     P[Products]
-    A -->|Валидация токенов при каждом запросе| U
-    A -->|Маршрутизация запросов в соответствующие продукты| P
+    T[Storage]
+
+    G -->|Валидация токенов| U
+    G -->|Проверка сессии, отзыв| S
+    G -->|Проверка прав на маршрут| Z
+    G -->|Маршрутизация | B
+    G -->|Маршрутизация | P
+    G -->|WS | R
+    G -->|Профиль для контекста| A
+    G -->|Загрузка/скачивание файлов| T
 ```
+---
+
+## 2. Products
 
 ```mermaid
 flowchart TB
     P[Products]
-    A[Access]
-    U[User]
-    S[Storage]
-    N[Notification]
-    L[Audit]
-    P -->|Получение профиля пользователя| U
-    P -->|проверка прав перед выполнением| A
-    P -->|Сохранение и чтение файлов| S
-    P -->|Отправка уведомлений| N
-    P -->|Логгирвоание| L
+    A[Account]
+    Z[Access]
+    S[Session]
+    T[Storage]
+    R[Realtime]
+
+    P -->|Профиль пользователя| A
+    P -->|Грубые права: роли, разрешения| Z
+    P -->|Контекст сессии пользователя| S
+    P -->|Сохранение и чтение файлов| T
+    P -->|Публикация событий для доставки| R
 ```
+
+---
+
+## 3. Account
 
 ```mermaid
 flowchart TB
-    N[Notification]
-    U[User]
-    L[Audit]
-    U -->|подтверждение регистрации, сброс пароля и тд| N
-    U -->|вход с нового устройства, блокировка аккаунта, крч всякое, что нужно будет посомтреть| L
+    A[Account]
+    T[Storage]
+    U[Auth]
+
+    A -->|Сохранение аватара и файлов профиля| T
+    U -->|Запрос на создание учётки| A
 ```
+
+---
+
+## 4. Auth
 
 ```mermaid
 flowchart TB
-    A[Access]
-    L[Audit]
-    A -->|Фиксация изменений в доступах| L
+    U[Auth]
+    A[Account]
+    S[Session]
+
+    U -->|Создание учётки при регистрации| A
+    U -->|Создание и отзыв сессии| S
 ```
+---
+
+
+## 5. Access
+
+```mermaid
+flowchart TB
+    Z[Access]
+    S[Session]
+    A[Account]
+
+    Z -->|Контекст сессии для проверки| S
+    Z -->|Базовые данные юзера| A
+```
+
+---
+
+## 6. Realtime
+
+```mermaid
+flowchart TB
+    R[Realtime]
+    S[Session]
+    Z[Access]
+    P[Products]
+    T[Storage]
+
+    R -->|Валидация WS-соединения| S
+    R -->|Проверка прав на каналы| Z
+    R -->|Чтение/запись данных| P
+    R -->|Вложения в сообщениях| T
+```
+---
+## 7. BFF
+
+```mermaid
+flowchart TB
+    B[BFF]
+    P[Products]
+    Z[Access]
+    S[Session]
+
+    B -->|Агрегация данных продукта| P
+    B -->|Проверка прав для UI| Z
+    B -->|Контекст сессии| S
+```
+---
+
+
 
 ## Контракты
 
 ```mermaid
 classDiagram
-    class User {
-        RegisterUser()
+    class Auth {
+        Register()
         Authenticate()
-        CheckSession()
+        RefreshToken()
+        RevokeToken()
+        ValidateToken()
+        ChangePassword()
+        ResetPassword()
+    }
+
+    class Session {
+        CreateSession()
+        GetSession()
+        ValidateSession()
+        RefreshSession()
         KillSession()
-        GetUserInfo()
+        ListSessions()
+    }
+
+    class Account {
+        CreateAccount()
+        GetAccountInfo()
+        UpdateAccountInfo()
+        DeleteAccount()
+        GetShortData()
     }
 
     class Access {
         CheckAccess()
         GrantAccess()
-        DeleteAccess()
-        GetUserPermissions()
+        RevokeAccess()
+        GetAccountPermissions()
+        ListRoles()
+    }
+
+    class Realtime {
+        OpenConnection()
+        CloseConnection()
+        Subscribe()
+        Unsubscribe()
+        SendToUser()
+        SendToChannel()
+        GetPresence()
+    }
+
+    class BFF {
+        GetHomeScreen()
+        GetProfileScreen()
+        GetEntityDetail()
+        UpdateSettings()
     }
 
     class Notification {
         SendNotification()
+        GetStatus()
+        RenderTemplate()
+    }
+
+    class Audit {
+        AppendEvent()
+        ExportEvents()
     }
 
     class Storage {
@@ -172,70 +446,64 @@ classDiagram
 
 ```mermaid
 ---
-title: регистрация юзера
+title: Регистрация пользователя
 ---
 flowchart LR
-    A[UI]
-    B[API Gateway]
-    C[User]
-    D[Mailer]
-    E[Audit]
-    A --> B --> C -.-> D
-    C -.-> E
+    A[UI] -->|POST /register| B[API Gateway]
+    B -->|Register| U[Auth]
+    U -->|CreateAccount| C[Account]
+    U -->|CreateSession| S[Session]
+    U -.->|user.registered| N[Notification]
+    U -.->|user.registered| D[Audit]
+    N -.->|email| M[Mailer]
 ```
 
 ```mermaid
 ---
-title: вход пользователя
+title: Вход пользователя
 ---
 flowchart LR
-    A[UI]
-    B[API Gateway]
-    C[User]
-    D[Audit]
-    A --> B --> C
-    C -.-> D
+    A[UI] -->|POST /login| B[API Gateway]
+    B -->|Authenticate| U[Auth]
+    U -->|GetAccountInfo| C[Account]
+    U -->|CreateSession| S[Session]
+    U -.->|user.logged_in| D[Audit]
+    U -.->|user.logged_in| N[Notification]
+    N -.->|new device alert| M[Mailer]
 ```
 
 ```mermaid
 ---
-title: обращение к продукту
+title: Обращение к продукту
 ---
 flowchart LR
-    A[UI]
-    B[API Gateway]
-    C[User]
-    D[Product]
-    A -->|Запрос с токеном| B
-    B --> C
-    C --> B
-    B --> D
+    A[UI] -->|Запрос с токеном| B[API Gateway]
+    B -->|ValidateToken| U[Auth]
+    B -->|ValidateSession| S[Session]
+    B -->|CheckAccess| Z[Access]
+    B -->|Route| P[Product]
+    P -->|GetPublicProfile| C[Account]
+    P -->|CheckResourceAccess| P
 ```
 
 ```mermaid
 ---
-title: проверка доступа к ресурсу
+title: отправка сообщений
 ---
+
 flowchart LR
-    A[UI]
-    B[API Gateway]
-    C[Product B]
-    D[Access]
-    A --> B --> C
-    C --> D
-    D --> C
+    A[Client 1] -->|WS| R[Realtime]
+    R -->|CheckAccess| Z[Access]
+    R -->|GetEntity / UpdateEntity| P[Product]
+    P -->|Save message| DB[(Product DB)]
+    P -.->|message . created| R
+    R -->|SendToUser| B[Client 2]
+    R -.->|message.sent| D[Audit]
 ```
+
 
 ## Как добавить новый продукт
 
-1. Регистрируем политики и роли в **Access**
-2. Пишем продукт
-3. Добавить роутинг для продукта в **API Gateway**
-4. Получаем деньги и идем купить бамбук
-
-## Доработки (TODO)
-
-* Core-компонент `Subscription` -- определяет, какие продукты есть (купил) у юзера
-
-[//]: # (TODO)
-* Из `User` вынести сессии, способы 
+1. Пишем продукт
+2. Добавить роутинг для продукта в **API Gateway**
+4. Получаем деньги и идем курить бамбук
